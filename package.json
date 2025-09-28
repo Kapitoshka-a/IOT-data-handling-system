@@ -1,0 +1,38 @@
+{
+  "name": "iot-data-processing-system",
+  "version": "1.0.0",
+  "description": "IoT Data Processing System with AWS Lambda and SQS",
+  "main": "index.js",
+  "scripts": {
+    "deploy": "serverless deploy",
+    "deploy:dev": "serverless deploy --stage dev",
+    "deploy:prod": "serverless deploy --stage prod",
+    "remove": "serverless remove",
+    "remove:dev": "serverless remove --stage dev",
+    "remove:prod": "serverless remove --stage prod",
+    "logs": "serverless logs",
+    "info": "serverless info",
+    "invoke": "serverless invoke",
+    "offline": "serverless offline"
+  },
+  "devDependencies": {
+    "serverless": "^3.38.0",
+    "serverless-python-requirements": "^6.0.0",
+    "serverless-offline": "^13.3.0"
+  },
+  "author": "IoT Data Processing Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kapitoshka-a/IOT-data-handling-system.git"
+  },
+  "keywords": [
+    "iot",
+    "aws",
+    "lambda",
+    "sqs",
+    "serverless",
+    "mysql",
+    "fastapi"
+  ]
+}

@@ -1,0 +1,265 @@
+service: iot-data-processing-system
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: python3.9
+  region: eu-north-1
+  stage: ${opt:stage, 'dev'}
+  memorySize: 512
+  timeout: 30
+  environment:
+    STAGE: ${self:provider.stage}
+    REGION: ${self:provider.region}
+    DB_SECRET_ARN: arn:aws:secretsmanager:${self:provider.region}:${aws:accountId}:secret:instagram-app-db-credentials
+    TEMPERATURE_TABLE: iot_temperature_data_${self:provider.stage}
+    HUMIDITY_TABLE: iot_humidity_data_${self:provider.stage}
+    LIGHT_TABLE: iot_light_data_${self:provider.stage}
+    ALL_SENSORS_TABLE: iot_all_sensors_data_${self:provider.stage}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - secretsmanager:GetSecretValue
+            - secretsmanager:DescribeSecret
+          Resource: arn:aws:secretsmanager:${self:provider.region}:${aws:accountId}:secret:instagram-app-db-credentials*
+        - Effect: Allow
+          Action:
+            - sqs:SendMessage
+            - sqs:ReceiveMessage
+            - sqs:DeleteMessage
+            - sqs:GetQueueAttributes
+          Resource:
+            - !GetAtt IotDataQueue.Arn
+            - !GetAtt IotDataDeadLetterQueue.Arn
+        - Effect: Allow
+          Action:
+            - cloudwatch:PutMetricData
+          Resource: "*"
+        - Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: "*"
+
+plugins:
+  - serverless-python-requirements
+
+custom:
+  pythonRequirements:
+    dockerizePip: false
+    slim: false
+    strip: false
+    pythonBin: python3
+    usePoetry: false
+    useDownloadCache: true
+    useStaticCache: true
+    noDeploy:
+      - boto3
+      - botocore
+
+package:
+  patterns:
+    - '!node_modules/**'
+    - '!.git/**'
+    - '!.pytest_cache/**'
+    - '!tests/**'
+    - '!.env'
+    - '!README.md'
+
+functions:
+  # Temperature sensor simulator - every 10 seconds
+  temperatureSensorSimulator:
+    handler: src.functions.temperature_sensor_simulator.handler
+    name: ${self:provider.stage}-temperature-sensor-simulator
+    description: Simulates temperature sensor readings and sends to SQS
+    environment:
+      IOT_DATA_QUEUE_URL: !Ref IotDataQueue
+      SENSOR_TYPE: temperature
+      SENSOR_ID: temp_sensor_001_${self:provider.stage}
+      SENSOR_INTERVAL: "10"
+    events:
+      - schedule: rate(1 minute)
+
+  # Humidity sensor simulator - every 15 seconds (using 1 minute due to AWS limits)
+  humiditySensorSimulator:
+    handler: src.functions.humidity_sensor_simulator.handler
+    name: ${self:provider.stage}-humidity-sensor-simulator
+    description: Simulates humidity sensor readings and sends to SQS
+    environment:
+      IOT_DATA_QUEUE_URL: !Ref IotDataQueue
+      SENSOR_TYPE: humidity
+      SENSOR_ID: humidity_sensor_001_${self:provider.stage}
+      SENSOR_INTERVAL: "15"
+    events:
+      - schedule: rate(1 minute)
+
+  # Light sensor simulator - every 20 seconds (using 1 minute due to AWS limits)
+  lightSensorSimulator:
+    handler: src.functions.light_sensor_simulator.handler
+    name: ${self:provider.stage}-light-sensor-simulator
+    description: Simulates light sensor readings and sends to SQS
+    environment:
+      IOT_DATA_QUEUE_URL: !Ref IotDataQueue
+      SENSOR_TYPE: light
+      SENSOR_ID: light_sensor_001_${self:provider.stage}
+      SENSOR_INTERVAL: "20"
+    events:
+      - schedule: rate(1 minute)
+
+  # Main data processing function triggered by SQS
+  saveCalculatedDataFunction:
+    handler: src.functions.save_calculated_data.handler
+    name: ${self:provider.stage}-save-calculated-data-function
+    description: Processes IoT sensor data from SQS and saves to database
+    timeout: 30
+    memorySize: 1024
+    environment:
+      IOT_DLQ_URL: !Ref IotDataDeadLetterQueue
+    events:
+      - sqs:
+          arn: !GetAtt IotDataQueue.Arn
+          batchSize: 10
+          maximumBatchingWindow: 5
+          functionResponseType: ReportBatchItemFailures
+
+  # Dead Letter Queue handler
+  dlqHandlerFunction:
+    handler: src.functions.dlq_handler_function.handler
+    name: ${self:provider.stage}-dlq-handler-function
+    description: Handles failed messages from Dead Letter Queue
+    environment:
+      IOT_DLQ_URL: !Ref IotDataDeadLetterQueue
+    events:
+      - sqs:
+          arn: !GetAtt IotDataDeadLetterQueue.Arn
+          batchSize: 5
+
+  # Historical data API function
+  getHistoricalDataFunction:
+    handler: src.functions.get_historical_data.handler
+    name: ${self:provider.stage}-get-historical-data-function
+    description: REST API for retrieving IoT sensor historical data
+    timeout: 30
+    memorySize: 1024
+    events:
+      - http:
+          path: /
+          method: get
+          cors: true
+      - http:
+          path: /health
+          method: get
+          cors: true
+      - http:
+          path: /api/v1/sensors/historical
+          method: get
+          cors: true
+      - http:
+          path: /api/v1/sensors/{sensor_type}/historical
+          method: get
+          cors: true
+      - http:
+          path: /api/v1/sensors/status
+          method: get
+          cors: true
+      - http:
+          path: /api/v1/sensors/{sensor_type}/statistics
+          method: get
+          cors: true
+      - http:
+          path: /api/v1/sensors/latest
+          method: get
+          cors: true
+
+resources:
+  Resources:
+    # Main SQS Queue for IoT data
+    IotDataQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:provider.stage}-iot-data-queue
+        VisibilityTimeoutSeconds: 180
+        MessageRetentionPeriod: 1209600  # 14 days
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt IotDataDeadLetterQueue.Arn
+          maxReceiveCount: 3
+        Tags:
+          - Key: Environment
+            Value: ${self:provider.stage}
+          - Key: Service
+            Value: iot-data-processing
+
+    # Dead Letter Queue for failed messages
+    IotDataDeadLetterQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:provider.stage}-iot-data-dlq
+        MessageRetentionPeriod: 1209600  # 14 days
+        Tags:
+          - Key: Environment
+            Value: ${self:provider.stage}
+          - Key: Service
+            Value: iot-data-processing
+
+    # CloudWatch Alarms for monitoring
+    ProcessingErrorsAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:provider.stage}-iot-processing-errors
+        AlarmDescription: Monitor IoT data processing errors
+        MetricName: Errors
+        Namespace: AWS/Lambda
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 2
+        Threshold: 5
+        ComparisonOperator: GreaterThanThreshold
+        Dimensions:
+          - Name: FunctionName
+            Value: ${self:provider.stage}-save-calculated-data-function
+
+    DlqMessagesAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:provider.stage}-iot-dlq-messages
+        AlarmDescription: Monitor messages in Dead Letter Queue
+        MetricName: ApproximateNumberOfVisibleMessages
+        Namespace: AWS/SQS
+        Statistic: Average
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 10
+        ComparisonOperator: GreaterThanThreshold
+        Dimensions:
+          - Name: QueueName
+            Value: ${self:provider.stage}-iot-data-dlq
+
+  Outputs:
+    IotDataQueueUrl:
+      Description: URL of the IoT data SQS queue
+      Value: !Ref IotDataQueue
+      Export:
+        Name: ${self:provider.stage}-iot-data-queue-url
+
+    IotDataDlqUrl:
+      Description: URL of the IoT data Dead Letter Queue
+      Value: !Ref IotDataDeadLetterQueue
+      Export:
+        Name: ${self:provider.stage}-iot-data-dlq-url
+
+    HistoricalDataApiUrl:
+      Description: URL of the Historical Data API
+      Value:
+        Fn::Join:
+          - ''
+          - - 'https://'
+            - Ref: ApiGatewayRestApi
+            - '.execute-api.'
+            - ${self:provider.region}
+            - '.amazonaws.com/'
+            - ${self:provider.stage}
+      Export:
+        Name: ${self:provider.stage}-historical-data-api-url
