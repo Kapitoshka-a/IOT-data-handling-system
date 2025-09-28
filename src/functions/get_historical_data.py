@@ -1,7 +1,3 @@
-"""
-FastAPI Implementation for IoT Historical Data Service
-"""
-
 from fastapi import FastAPI, HTTPException, Query, Path, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
