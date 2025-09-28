@@ -12,7 +12,6 @@ import json
 from database.db_manager import DatabaseManager
 from models.sensor_models import (
     SensorDataResponse,
-    SensorsStatusResponse,
     ApiResponse,
     SensorType
 )
@@ -20,10 +19,10 @@ from models.sensor_models import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-TEMPERATURE_TABLE = os.environ.get('TEMPERATURE_TABLE', 'iot_temperature_data')
-HUMIDITY_TABLE = os.environ.get('HUMIDITY_TABLE', 'iot_humidity_data')
-LIGHT_TABLE = os.environ.get('LIGHT_TABLE', 'iot_light_data')
-ALL_SENSORS_TABLE = os.environ.get('ALL_SENSORS_TABLE', 'iot_all_sensors_data')
+TEMPERATURE_TABLE = os.environ.get('TEMPERATURE_TABLE', 'iot_temperature_data_dev')
+HUMIDITY_TABLE = os.environ.get('HUMIDITY_TABLE', 'iot_humidity_data_dev')
+LIGHT_TABLE = os.environ.get('LIGHT_TABLE', 'iot_light_data_dev')
+ALL_SENSORS_TABLE = os.environ.get('ALL_SENSORS_TABLE', 'iot_all_sensors_data_dev')
 
 db_manager = None
 
@@ -332,25 +331,6 @@ async def get_sensor_type_historical_data(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@app.get("/api/v1/sensors/status", response_model=SensorsStatusResponse)
-async def get_sensors_status(db: DatabaseManager = Depends(get_db_manager)):
-    """Get status information about all sensors"""
-    try:
-        service = HistoricalDataService(db)
-        status = await service.get_sensors_status()
-
-        return SensorsStatusResponse(
-            success=True,
-            status=status,
-            timestamp=datetime.utcnow().isoformat() + "Z"
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in get_sensors_status: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-
 @app.get("/api/v1/sensors/{sensor_type}/statistics")
 async def get_sensor_statistics(
         sensor_type: SensorType = Path(..., description="Type of sensor"),
@@ -432,7 +412,7 @@ async def general_exception_handler(request, exc):
 
 if __name__ == "__main__":
     uvicorn.run(
-        "main:app",
+        app,
         host="0.0.0.0",
         port=int(os.environ.get("PORT", 8000)),
         reload=os.environ.get("ENVIRONMENT") == "PROD",
