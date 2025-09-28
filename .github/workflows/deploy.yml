@@ -11,7 +11,7 @@ on:
 env:
   AWS_REGION: eu-north-1
   NODE_VERSION: '18'
-  PYTHON_VERSION: '3.12'
+  PYTHON_VERSION: '3.9'  # Changed to match your serverless.yml
 
 jobs:
   test:
@@ -23,15 +23,34 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
     - name: Setup Python
       uses: actions/setup-python@v4
       with:
         python-version: ${{ env.PYTHON_VERSION }}
 
+    - name: Install Node.js dependencies
+      run: npm ci
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run tests (if you have any)
+      run: |
+        echo "Add your test commands here"
+        # Example: python -m pytest tests/
+
   deploy:
     name: Deploy to AWS
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'  # Fixed: was 'master', now 'main'
 
     steps:
     - name: Checkout code
@@ -63,6 +82,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
+    - name: Install Serverless Framework
+      run: npm install -g serverless
+
     - name: Deploy to production
       run: |
         npx serverless deploy --stage prod --verbose
@@ -73,7 +95,7 @@ jobs:
     - name: Notify deployment status
       if: always()
       run: |
-        if [ ${{ job.status }} == 'success' ]; then
+        if [ "${{ job.status }}" == "success" ]; then
           echo "✅ Deployment successful!"
         else
           echo "❌ Deployment failed!"
