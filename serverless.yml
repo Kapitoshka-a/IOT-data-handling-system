@@ -70,7 +70,7 @@ package:
     - '!README.md'
 
 functions:
-  # Temperature sensor simulator - every 10 seconds
+
   temperatureSensorSimulator:
     handler: src.functions.temperature_sensor_simulator.handler
     name: ${self:provider.stage}-temperature-sensor-simulator
@@ -83,7 +83,7 @@ functions:
     events:
       - schedule: rate(1 minute)
 
-  # Humidity sensor simulator - every 15 seconds (using 1 minute due to AWS limits)
+
   humiditySensorSimulator:
     handler: src.functions.humidity_sensor_simulator.handler
     name: ${self:provider.stage}-humidity-sensor-simulator
@@ -96,7 +96,7 @@ functions:
     events:
       - schedule: rate(1 minute)
 
-  # Light sensor simulator - every 20 seconds (using 1 minute due to AWS limits)
+
   lightSensorSimulator:
     handler: src.functions.light_sensor_simulator.handler
     name: ${self:provider.stage}-light-sensor-simulator
@@ -109,7 +109,6 @@ functions:
     events:
       - schedule: rate(1 minute)
 
-  # Main data processing function triggered by SQS
   saveCalculatedDataFunction:
     handler: src.functions.save_calculated_data.handler
     name: ${self:provider.stage}-save-calculated-data-function

@@ -2,15 +2,15 @@ from fastapi import FastAPI, HTTPException, Query, Path, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
-import uvicorn
+from mangum import Mangum
 import os
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 import json
 
-from database.db_manager import DatabaseManager
-from models.sensor_models import (
+from src.database.db_manager import DatabaseManager
+from src.models.sensor_models import (
     SensorDataResponse,
     ApiResponse,
     SensorType
@@ -56,8 +56,9 @@ app.add_middleware(
 
 def get_db_manager() -> DatabaseManager:
     """Dependency to get database manager"""
+    global db_manager
     if db_manager is None:
-        raise HTTPException(status_code=500, detail="Database manager not initialized")
+        db_manager = DatabaseManager()
     return db_manager
 
 
@@ -73,13 +74,13 @@ class HistoricalDataService:
             since_time = (datetime.utcnow() - timedelta(hours=hours)).strftime('%Y-%m-%d %H:%M:%S')
 
             query = f"""
-            SELECT sensor_id, sensor_type, timestamp, location_lat, location_lng, 
-                   sensor_value, unit, metadata, created_at
-            FROM {ALL_SENSORS_TABLE}
-            WHERE timestamp >= %s
-            ORDER BY timestamp DESC
-            LIMIT %s
-            """
+                SELECT sensor_id, sensor_type, timestamp, location_lat, location_lng, 
+                       sensor_value, unit, metadata, created_at
+                FROM {ALL_SENSORS_TABLE}
+                WHERE timestamp >= %s
+                ORDER BY timestamp DESC
+                LIMIT %s
+                """
 
             results = self.db_manager.execute_query(query, (since_time, limit), fetch_results=True)
             return self.format_sensor_results(results)
@@ -115,13 +116,13 @@ class HistoricalDataService:
                 unit = 'lux'
 
             query = f"""
-            SELECT sensor_id, timestamp, location_lat, location_lng, 
-                   {value_column} as sensor_value, metadata, created_at
-            FROM {table_name}
-            WHERE timestamp >= %s
-            ORDER BY timestamp DESC
-            LIMIT %s
-            """
+                SELECT sensor_id, timestamp, location_lat, location_lng, 
+                       {value_column} as sensor_value, metadata, created_at
+                FROM {table_name}
+                WHERE timestamp >= %s
+                ORDER BY timestamp DESC
+                LIMIT %s
+                """
 
             results = self.db_manager.execute_query(query, (since_time, limit), fetch_results=True)
 
@@ -144,19 +145,19 @@ class HistoricalDataService:
         """Get status information about all sensors"""
         try:
             status_query = f"""
-            SELECT 
-                sensor_type,
-                COUNT(*) as total_readings,
-                COUNT(DISTINCT sensor_id) as sensor_count,
-                MAX(timestamp) as latest_reading,
-                MIN(timestamp) as earliest_reading,
-                AVG(sensor_value) as avg_value,
-                MAX(sensor_value) as max_value,
-                MIN(sensor_value) as min_value
-            FROM {ALL_SENSORS_TABLE}
-            WHERE timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-            GROUP BY sensor_type
-            """
+                SELECT 
+                    sensor_type,
+                    COUNT(*) as total_readings,
+                    COUNT(DISTINCT sensor_id) as sensor_count,
+                    MAX(timestamp) as latest_reading,
+                    MIN(timestamp) as earliest_reading,
+                    AVG(sensor_value) as avg_value,
+                    MAX(sensor_value) as max_value,
+                    MIN(sensor_value) as min_value
+                FROM {ALL_SENSORS_TABLE}
+                WHERE timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+                GROUP BY sensor_type
+                """
 
             results = self.db_manager.execute_query(status_query, fetch_results=True)
 
@@ -165,7 +166,7 @@ class HistoricalDataService:
                 'sensors': {},
                 'total_readings': 0,
                 'active_sensors': 0,
-                'data_quality': 'good'  # Can be enhanced with actual quality checks
+                'data_quality': 'good'
             }
 
             for row in results:
@@ -197,17 +198,17 @@ class HistoricalDataService:
             since_time = (datetime.utcnow() - timedelta(hours=hours)).strftime('%Y-%m-%d %H:%M:%S')
 
             query = f"""
-            SELECT 
-                COUNT(*) as reading_count,
-                AVG(sensor_value) as avg_value,
-                MAX(sensor_value) as max_value,
-                MIN(sensor_value) as min_value,
-                STDDEV(sensor_value) as std_deviation,
-                MAX(timestamp) as latest_reading,
-                MIN(timestamp) as earliest_reading
-            FROM {ALL_SENSORS_TABLE}
-            WHERE sensor_type = %s AND timestamp >= %s
-            """
+                SELECT 
+                    COUNT(*) as reading_count,
+                    AVG(sensor_value) as avg_value,
+                    MAX(sensor_value) as max_value,
+                    MIN(sensor_value) as min_value,
+                    STDDEV(sensor_value) as std_deviation,
+                    MAX(timestamp) as latest_reading,
+                    MIN(timestamp) as earliest_reading
+                FROM {ALL_SENSORS_TABLE}
+                WHERE sensor_type = %s AND timestamp >= %s
+                """
 
             results = self.db_manager.execute_query(query, (sensor_type, since_time), fetch_results=True)
 
@@ -261,6 +262,25 @@ class HistoricalDataService:
             formatted_results.append(formatted_row)
 
         return formatted_results
+
+
+# Root endpoint handler
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "message": "IoT Historical Data API",
+        "status": "running",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "endpoints": {
+            "health": "/health",
+            "all_sensors": "/api/v1/sensors/historical",
+            "sensor_type": "/api/v1/sensors/{sensor_type}/historical",
+            "statistics": "/api/v1/sensors/{sensor_type}/statistics",
+            "status": "/api/v1/sensors/status",
+            "latest": "/api/v1/sensors/latest"
+        }
+    }
 
 
 @app.get("/health")
@@ -331,6 +351,25 @@ async def get_sensor_type_historical_data(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@app.get("/api/v1/sensors/status")
+async def get_sensors_status(db: DatabaseManager = Depends(get_db_manager)):
+    """Get status information about all sensors"""
+    try:
+        service = HistoricalDataService(db)
+        status = await service.get_sensors_status()
+
+        return ApiResponse(
+            success=True,
+            data=status,
+            timestamp=datetime.utcnow().isoformat() + "Z"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in get_sensors_status: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @app.get("/api/v1/sensors/{sensor_type}/statistics")
 async def get_sensor_statistics(
         sensor_type: SensorType = Path(..., description="Type of sensor"),
@@ -354,7 +393,6 @@ async def get_sensor_statistics(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-# Real-time data endpoints (for future WebSocket implementation)
 @app.get("/api/v1/sensors/latest")
 async def get_latest_readings(
         sensor_type: Optional[SensorType] = Query(None, description="Filter by sensor type"),
@@ -365,10 +403,8 @@ async def get_latest_readings(
         service = HistoricalDataService(db)
 
         if sensor_type:
-            # Get latest reading for specific sensor type
             data = await service.get_sensor_type_data(sensor_type.value, limit=1, hours=1)
         else:
-            # Get latest readings for all sensor types
             data = await service.get_all_sensors_data(limit=10, hours=1)
 
         return ApiResponse(
@@ -410,11 +446,15 @@ async def general_exception_handler(request, exc):
     )
 
 
+handler = Mangum(app, lifespan="off")
+
 if __name__ == "__main__":
+    import uvicorn
+
     uvicorn.run(
         app,
         host="0.0.0.0",
         port=int(os.environ.get("PORT", 8000)),
-        reload=os.environ.get("ENVIRONMENT") == "PROD",
+        reload=os.environ.get("ENVIRONMENT") != "PROD",
         log_level="info"
     )

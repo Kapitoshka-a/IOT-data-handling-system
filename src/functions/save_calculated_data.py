@@ -5,8 +5,7 @@ import logging
 from datetime import datetime
 from typing import Dict, Any
 
-from database.db_manager import DatabaseManager
-
+from src.database.db_manager import DatabaseManager
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
