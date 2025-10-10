@@ -275,8 +275,6 @@ async def root():
         "endpoints": {
             "health": "/health",
             "all_sensors": "/api/v1/sensors/historical",
-            "sensor_type": "/api/v1/sensors/{sensor_type}/historical",
-            "statistics": "/api/v1/sensors/{sensor_type}/statistics",
             "status": "/api/v1/sensors/status",
             "latest": "/api/v1/sensors/latest"
         }
@@ -321,75 +319,6 @@ async def get_all_sensors_historical_data(
         raise
     except Exception as e:
         logger.error(f"Error in get_all_sensors_historical_data: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-
-@app.get("/api/v1/sensors/{sensor_type}/historical", response_model=SensorDataResponse)
-async def get_sensor_type_historical_data(
-        sensor_type: SensorType = Path(..., description="Type of sensor"),
-        limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
-        hours: int = Query(24, ge=1, le=168, description="Hours of historical data to retrieve"),
-        db: DatabaseManager = Depends(get_db_manager)
-):
-    """Get historical data for specific sensor type"""
-    try:
-        service = HistoricalDataService(db)
-        data = await service.get_sensor_type_data(sensor_type.value, limit=limit, hours=hours)
-
-        return SensorDataResponse(
-            success=True,
-            sensor_type=sensor_type.value,
-            data=data,
-            count=len(data),
-            filters={"limit": limit, "hours": hours},
-            timestamp=datetime.utcnow().isoformat() + "Z"
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in get_sensor_type_historical_data: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-
-@app.get("/api/v1/sensors/status")
-async def get_sensors_status(db: DatabaseManager = Depends(get_db_manager)):
-    """Get status information about all sensors"""
-    try:
-        service = HistoricalDataService(db)
-        status = await service.get_sensors_status()
-
-        return ApiResponse(
-            success=True,
-            data=status,
-            timestamp=datetime.utcnow().isoformat() + "Z"
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in get_sensors_status: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-
-@app.get("/api/v1/sensors/{sensor_type}/statistics")
-async def get_sensor_statistics(
-        sensor_type: SensorType = Path(..., description="Type of sensor"),
-        hours: int = Query(24, ge=1, le=168, description="Hours for statistical analysis"),
-        db: DatabaseManager = Depends(get_db_manager)
-):
-    """Get statistical information for a sensor type"""
-    try:
-        service = HistoricalDataService(db)
-        statistics = await service.get_sensor_statistics(sensor_type.value, hours=hours)
-
-        return ApiResponse(
-            success=True,
-            data=statistics,
-            timestamp=datetime.utcnow().isoformat() + "Z"
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in get_sensor_statistics: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
