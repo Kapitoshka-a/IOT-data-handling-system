@@ -109,9 +109,10 @@ functions:
     events:
       - schedule: rate(1 minute)
 
-  saveCalculatedDataFunction:
+  saveCalculatedDataFunctionV2:
+    logRetentionInDays: 14
     handler: src.functions.save_calculated_data.handler
-    name: ${self:provider.stage}-save-calculated-data-function
+    name: ${self:provider.stage}-save-calculated-data-function-v2
     description: Processes IoT sensor data from SQS and saves to database
     timeout: 30
     memorySize: 1024

@@ -1,4 +1,6 @@
 import json
+import math
+
 import boto3
 import random
 import os
@@ -19,7 +21,7 @@ SENSOR_TYPE = os.environ.get('SENSOR_TYPE', 'temperature')
 SENSOR_ID = os.environ.get('SENSOR_ID', 'temp_sensor_001')
 SENSOR_INTERVAL = int(os.environ.get('SENSOR_INTERVAL', '10'))
 
-# Kyiv coordinates (as per user location)
+
 KYIV_LAT = 50.4501
 KYIV_LNG = 30.5234
 

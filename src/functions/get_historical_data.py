@@ -274,9 +274,7 @@ async def root():
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "endpoints": {
             "health": "/health",
-            "all_sensors": "/api/v1/sensors/historical",
-            "status": "/api/v1/sensors/status",
-            "latest": "/api/v1/sensors/latest"
+            "all_sensors": "/api/v1/sensors/historical"
         }
     }
 
@@ -319,33 +317,6 @@ async def get_all_sensors_historical_data(
         raise
     except Exception as e:
         logger.error(f"Error in get_all_sensors_historical_data: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-
-@app.get("/api/v1/sensors/latest")
-async def get_latest_readings(
-        sensor_type: Optional[SensorType] = Query(None, description="Filter by sensor type"),
-        db: DatabaseManager = Depends(get_db_manager)
-):
-    """Get the latest readings from sensors"""
-    try:
-        service = HistoricalDataService(db)
-
-        if sensor_type:
-            data = await service.get_sensor_type_data(sensor_type.value, limit=1, hours=1)
-        else:
-            data = await service.get_all_sensors_data(limit=10, hours=1)
-
-        return ApiResponse(
-            success=True,
-            data=data,
-            count=len(data),
-            timestamp=datetime.utcnow().isoformat() + "Z"
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in get_latest_readings: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
